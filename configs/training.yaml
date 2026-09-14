@@ -1,0 +1,17 @@
+model:
+  name: intfloat/multilingual-e5-small
+
+data:
+  samples_per_batch: 2000
+
+training:
+  epochs: 3
+  batch_size: 32
+  learning_rate: 0.00002
+  seed: 42
+
+evaluation:
+  top_k: 3
+
+quality_gate:
+  minimum_accuracy_at_1: 0.70

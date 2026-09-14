@@ -1,0 +1,52 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Generated datasets and manifests
+data/raw/*
+!data/raw/batches/
+data/raw/batches/*
+!data/raw/batches/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/manifests/*
+!data/manifests/.gitkeep
+
+# Generated model artifacts
+models/*
+!models/current/
+models/current/*
+!models/current/.gitkeep
+
+# Airflow runtime files
+services/airflow/logs/
+services/airflow/airflow.cfg
+services/airflow/airflow.db
+services/airflow/webserver_config.py
+services/airflow/simple_auth_manager_passwords.json.generated
+
+# Local caches and experiment files
+.cache/
+clearml.conf
+mlruns/
+wandb/
+*.log
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/

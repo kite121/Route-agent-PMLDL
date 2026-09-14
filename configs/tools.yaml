@@ -1,0 +1,64 @@
+fallback:
+  name: no_tool
+  description: No available tool can handle the request
+
+tools:
+  alarm_set:
+    description: Set an alarm for a specified date and time
+    arguments: [date, time]
+
+  alarm_query:
+    description: Retrieve active alarms
+    arguments: [date, time]
+
+  alarm_remove:
+    description: Remove an existing alarm
+    arguments: [date, time]
+
+  calendar_set:
+    description: Create a calendar event
+    arguments: [event_name, date, time, location]
+
+  calendar_query:
+    description: Retrieve calendar events
+    arguments: [date]
+
+  calendar_remove:
+    description: Remove a calendar event
+    arguments: [event_name, date]
+
+  weather_query:
+    description: Get the weather forecast for a location and date
+    arguments: [location, date]
+
+  email_sendemail:
+    description: Send an email to a recipient
+    arguments: [recipient, subject, message]
+
+  email_query:
+    description: Search for email messages
+    arguments: [sender, subject]
+
+  lists_createoradd:
+    description: Create a list or add an item to a list
+    arguments: [list_name, item]
+
+  lists_query:
+    description: Retrieve items from a list
+    arguments: [list_name]
+
+  lists_remove:
+    description: Remove an item from a list
+    arguments: [list_name, item]
+
+  transport_taxi:
+    description: Request a taxi between two locations
+    arguments: [origin, destination]
+
+  transport_traffic:
+    description: Get traffic information for a location
+    arguments: [location]
+
+  transport_query:
+    description: Find transport options between two locations
+    arguments: [origin, destination]

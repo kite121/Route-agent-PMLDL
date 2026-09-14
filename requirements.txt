@@ -1,0 +1,25 @@
+# Project runtime: Python 3.12
+
+# Configuration and data
+PyYAML
+python-dotenv
+datasets
+numpy
+pandas
+pyarrow
+scikit-learn
+
+# Model training and experiment tracking
+torch
+sentence-transformers[train]
+clearml
+
+# API and application
+pydantic
+fastapi
+uvicorn[standard]
+streamlit
+requests
+
+# Pipeline orchestration
+apache-airflow
