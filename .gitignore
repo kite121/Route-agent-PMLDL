@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 .venv/
+PROJECT_IMPLEMENTATION_PLAN.md
 
 # Python
 __pycache__/
