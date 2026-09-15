@@ -4,6 +4,7 @@
 PyYAML
 python-dotenv
 datasets
+huggingface-hub
 numpy
 pandas
 pyarrow

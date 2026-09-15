@@ -212,6 +212,49 @@ class ValidationReport(SchemaModel):
         return self
 
 
+class PreparationSplitStats(SchemaModel):
+    """Cleaning and label-mapping counts for one processed dataset split."""
+
+    input_count: NonNegativeInt
+    output_count: NonNegativeInt
+    dropped_count: NonNegativeInt
+    registered_tool_count: NonNegativeInt
+    fallback_count: NonNegativeInt
+    rejected_by_reason: dict[NonEmptyString, NonNegativeInt] = Field(
+        default_factory=dict
+    )
+
+    @model_validator(mode="after")
+    def validate_counts(self) -> Self:
+        if self.output_count + self.dropped_count != self.input_count:
+            raise ValueError("output_count + dropped_count must equal input_count")
+        if self.registered_tool_count + self.fallback_count != self.output_count:
+            raise ValueError(
+                "registered_tool_count + fallback_count must equal output_count"
+            )
+        if sum(self.rejected_by_reason.values()) < self.dropped_count:
+            raise ValueError("every dropped sample must have a rejection reason")
+        return self
+
+
+class DataPreparationReport(SchemaModel):
+    """Auditable preparation result for one versioned training dataset."""
+
+    schema_version: Literal[SCHEMA_VERSION] = SCHEMA_VERSION
+    dataset_version: DatasetVersion
+    processed_batch_id: BatchId
+    created_at: UtcDatetime = Field(default_factory=_utc_now)
+    splits: dict[DatasetSplit, PreparationSplitStats]
+
+    @model_validator(mode="after")
+    def require_all_splits(self) -> Self:
+        missing = set(DatasetSplit) - set(self.splits)
+        if missing:
+            names = ", ".join(sorted(split.value for split in missing))
+            raise ValueError(f"preparation report is missing splits: {names}")
+        return self
+
+
 class DatasetManifest(SchemaModel):
     """Lineage and integrity information for one processed dataset version."""
 
@@ -264,10 +307,12 @@ __all__ = [
     "BatchMetadata",
     "BatchStatus",
     "BatchesManifest",
+    "DataPreparationReport",
     "DataFileMetadata",
     "DatasetManifest",
     "DatasetSplit",
     "PipelineState",
+    "PreparationSplitStats",
     "ProcessedSample",
     "RawSample",
     "SourceManifest",
