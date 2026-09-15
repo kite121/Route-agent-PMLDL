@@ -1,26 +1,25 @@
 # Project runtime: Python 3.12
 
 # Configuration and data
-PyYAML
-python-dotenv
-datasets
-huggingface-hub
-numpy
-pandas
-pyarrow
-scikit-learn
+PyYAML==6.0.3
+python-dotenv==1.2.3
+huggingface-hub==1.31.0
+numpy==2.5.3
+pyarrow==25.0.1
+scikit-learn==1.9.1
 
 # Model training and experiment tracking
-torch
-sentence-transformers[train]
-clearml
+torch==2.14.0
+sentence-transformers[train]==6.0.1
+clearml==2.1.12
 
 # API and application
-pydantic
-fastapi
-uvicorn[standard]
-streamlit
-requests
+pydantic==2.13.5
+fastapi==0.136.3
+uvicorn[standard]==0.53.0
+streamlit==1.63.0
+requests==2.34.2
 
 # Pipeline orchestration
-apache-airflow
+apache-airflow==3.3.1
+apache-airflow-providers-standard==1.19.0

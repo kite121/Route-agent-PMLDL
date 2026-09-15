@@ -35,6 +35,7 @@ models/current/*
 
 # Airflow runtime files
 services/airflow/logs/
+services/airflow/runtime/
 services/airflow/airflow.cfg
 services/airflow/airflow.db
 services/airflow/webserver_config.py
