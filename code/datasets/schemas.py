@@ -92,6 +92,14 @@ class BatchStatus(StrEnum):
     FAILED = "failed"
 
 
+class PairKind(StrEnum):
+    """Relation encoded by one training pair for the routing bi-encoder."""
+
+    TOOL_POSITIVE = "tool_positive"
+    TOOL_NEGATIVE = "tool_negative"
+    FALLBACK_NEGATIVE = "fallback_negative"
+
+
 class SchemaModel(BaseModel):
     """Base settings for all persisted pipeline schemas."""
 
@@ -129,6 +137,27 @@ class ProcessedSample(SchemaModel):
             raise ValueError("train samples must include batch_id")
         if self.split is not DatasetSplit.TRAIN and self.batch_id is not None:
             raise ValueError("validation and test samples must not include batch_id")
+        return self
+
+
+class TrainingPair(SchemaModel):
+    """One labelled query-to-tool relation used by OnlineContrastiveLoss."""
+
+    pair_id: NonEmptyString
+    sample_id: NonEmptyString
+    query_text: NonEmptyString
+    source_label: NonEmptyString
+    candidate_tool: NonEmptyString
+    tool_text: NonEmptyString
+    label: Literal[0, 1]
+    pair_kind: PairKind
+
+    @model_validator(mode="after")
+    def validate_pair_kind(self) -> Self:
+        if self.pair_kind is PairKind.TOOL_POSITIVE and self.label != 1:
+            raise ValueError("tool_positive pairs must have label 1")
+        if self.pair_kind is not PairKind.TOOL_POSITIVE and self.label != 0:
+            raise ValueError("negative pairs must have label 0")
         return self
 
 
@@ -282,6 +311,42 @@ class DatasetManifest(SchemaModel):
         return self
 
 
+class TrainingPairsManifest(SchemaModel):
+    """Lineage, integrity, and class balance of generated training pairs."""
+
+    schema_version: Literal[SCHEMA_VERSION] = SCHEMA_VERSION
+    dataset_version: DatasetVersion
+    dataset_sha256: Sha256
+    source_train_sha256: Sha256
+    tools_sha256: Sha256
+    seed: int
+    negatives_per_query: PositiveInt
+    tool_names: list[NonEmptyString] = Field(min_length=2)
+    created_at: UtcDatetime = Field(default_factory=_utc_now)
+    pairs: DataFileMetadata
+    pair_counts: dict[PairKind, NonNegativeInt]
+    fallback_negative_tool_counts: dict[NonEmptyString, NonNegativeInt]
+
+    @model_validator(mode="after")
+    def validate_pair_metadata(self) -> Self:
+        if self.tool_names != sorted(self.tool_names):
+            raise ValueError("tool_names must be ordered")
+        if len(self.tool_names) != len(set(self.tool_names)):
+            raise ValueError("tool_names must be unique")
+        if set(self.pair_counts) != set(PairKind):
+            raise ValueError("pair_counts must include every pair kind")
+        if sum(self.pair_counts.values()) != self.pairs.sample_count:
+            raise ValueError("pair_counts must equal the number of pairs")
+        if set(self.fallback_negative_tool_counts) != set(self.tool_names):
+            raise ValueError(
+                "fallback negative counts must include every configured tool"
+            )
+        counts = self.fallback_negative_tool_counts.values()
+        if max(counts) - min(counts) > 1:
+            raise ValueError("fallback negative tool counts must be balanced")
+        return self
+
+
 class PipelineState(SchemaModel):
     """Minimal restart state used to select the next unprocessed batch."""
 
@@ -311,10 +376,13 @@ __all__ = [
     "DataFileMetadata",
     "DatasetManifest",
     "DatasetSplit",
+    "PairKind",
     "PipelineState",
     "PreparationSplitStats",
     "ProcessedSample",
     "RawSample",
     "SourceManifest",
+    "TrainingPair",
+    "TrainingPairsManifest",
     "ValidationReport",
 ]
