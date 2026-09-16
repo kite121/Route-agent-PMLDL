@@ -48,6 +48,7 @@ RUNS_DIR = PROJECT_ROOT / "models" / "runs"
 
 CLEARML_PROJECT_NAME = "PMLDL/Route-agent"
 EVALUATION_BATCH_SIZE = 128
+EVALUATION_SAMPLE_SEED = 42
 PROCESSED_COLUMNS = [
     "sample_id",
     "text",
@@ -63,6 +64,7 @@ PROCESSED_COLUMNS = [
 class EvaluationSettings:
     base_model_name: str
     top_k: int
+    samples_per_split: int
 
 
 @dataclass(frozen=True)
@@ -109,15 +111,26 @@ def _load_settings() -> EvaluationSettings:
         config = yaml.safe_load(TRAINING_CONFIG_PATH.read_text())
         model_name = config["model"]["name"]
         top_k = config["evaluation"]["top_k"]
+        samples_per_split = config["evaluation"]["samples_per_split"]
     except (KeyError, OSError, TypeError, yaml.YAMLError) as error:
         raise ValueError(
-            "training.yaml must define model.name and evaluation.top_k"
+            "training.yaml must define model.name and evaluation settings"
         ) from error
     if not isinstance(model_name, str) or not model_name.strip():
         raise ValueError("model.name must be a non-empty string")
     if isinstance(top_k, bool) or not isinstance(top_k, int) or top_k <= 0:
         raise ValueError("evaluation.top_k must be a positive integer")
-    return EvaluationSettings(base_model_name=model_name.strip(), top_k=top_k)
+    if (
+        isinstance(samples_per_split, bool)
+        or not isinstance(samples_per_split, int)
+        or samples_per_split <= 0
+    ):
+        raise ValueError("evaluation.samples_per_split must be a positive integer")
+    return EvaluationSettings(
+        base_model_name=model_name.strip(),
+        top_k=top_k,
+        samples_per_split=samples_per_split,
+    )
 
 
 def _dataset_manifest_path(dataset_version: str) -> Path:
@@ -196,6 +209,23 @@ def _read_split(
     if not labels.issubset(valid_labels):
         raise ValueError(f"processed {split.value} contains labels outside the registry")
     return table
+
+
+def _sample_split(
+    table: pa.Table,
+    *,
+    sample_count: int,
+    seed: int,
+) -> pa.Table:
+    """Select a reproducible evaluation subset without mixing data splits."""
+    if table.num_rows <= sample_count:
+        return table
+    indices = np.random.default_rng(seed).choice(
+        table.num_rows,
+        size=sample_count,
+        replace=False,
+    )
+    return table.take(pa.array(np.sort(indices), type=pa.int64()))
 
 
 def _select_device() -> str:
@@ -406,6 +436,7 @@ def _start_clearml_task(
     dataset_manifest: DatasetManifest,
     fine_tuned_run: EncoderRun,
     device: str,
+    samples_per_split: int,
 ) -> object:
     _configure_clearml()
     from clearml import Task
@@ -433,6 +464,11 @@ def _start_clearml_task(
                 "model_path": fine_tuned_run.model_reference,
             },
             "runtime": {"device": device},
+            "evaluation": {
+                "strategy": "deterministic_uniform_without_replacement",
+                "samples_per_split": samples_per_split,
+                "sampling_seed": EVALUATION_SAMPLE_SEED,
+            },
         },
         name="configuration",
     )
@@ -505,6 +541,16 @@ def main() -> None:
         valid_labels,
     )
     test = _read_split(dataset_manifest, DatasetSplit.TEST, valid_labels)
+    validation = _sample_split(
+        validation,
+        sample_count=settings.samples_per_split,
+        seed=EVALUATION_SAMPLE_SEED,
+    )
+    test = _sample_split(
+        test,
+        sample_count=settings.samples_per_split,
+        seed=EVALUATION_SAMPLE_SEED + 1,
+    )
     fine_tuned_run = _latest_completed_encoder(dataset_manifest.dataset_version)
     device = _select_device()
     task = None
@@ -514,6 +560,7 @@ def main() -> None:
             dataset_manifest=dataset_manifest,
             fine_tuned_run=fine_tuned_run,
             device=device,
+            samples_per_split=settings.samples_per_split,
         )
         base_run = EncoderRun(
             name="base",
@@ -528,6 +575,13 @@ def main() -> None:
             "dataset_sha256": dataset_manifest.dataset_sha256,
             "training_task_id": fine_tuned_run.clearml_task_id,
             "top_k": settings.top_k,
+            "evaluation_sample": {
+                "strategy": "deterministic_uniform_without_replacement",
+                "samples_per_split": settings.samples_per_split,
+                "sampling_seed": EVALUATION_SAMPLE_SEED,
+                "validation_rows": validation.num_rows,
+                "test_rows": test.num_rows,
+            },
             "tool_names": tool_names,
             "models": {},
         }

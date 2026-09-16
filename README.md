@@ -27,8 +27,13 @@ and packaging experiment, including rejected candidates.
 The source is the pinned `AmazonScience/massive`, configuration `all_1.1`,
 revision `e9957e4e8eb17fc67e3faf1a908829895653e775`. The test and validation
 splits are fixed. The train split is deterministically shuffled into batches of
-2,000 examples; each prepared dataset version records its source revision,
+200 examples; each prepared dataset version records its source revision,
 included batch IDs, row counts and SHA256 hashes in `data/manifests/`.
+
+The committed demo configuration intentionally keeps each run short: one
+training epoch per batch. Evaluation uses reproducible uniform samples of
+2,000 examples from validation and 2,000 from test; the splits remain separate
+and no evaluation sample is used for training.
 
 ## Setup
 
@@ -128,10 +133,10 @@ make airflow-test
 
 The model uses `OnlineContrastiveLoss` with balanced positive and negative
 pairs. The fallback threshold is selected on validation Macro F1 and applied
-unchanged to the held-out test split. The quality gate requires test
+unchanged to the held-out test sample. The quality gate requires test
 `Accuracy@1 >= 0.70` and Macro F1 no lower than the base encoder. Each model
 manifest includes dataset version and hashes, tool-registry hash, Git commit,
-ClearML task IDs and held-out metrics.
+ClearML task IDs and evaluation metrics.
 
 ## Demonstration
 
@@ -142,4 +147,5 @@ ClearML task IDs and held-out metrics.
 4. Route `Tell me a funny joke about cats` and show the `no_tool` fallback.
 5. In ClearML, show the linked training, evaluation, quality-gate and package
    tasks.
-6. In Airflow, trigger `agent_router_pipeline` and show its three task groups.
+6. In Airflow, show the successful scheduled `agent_router_pipeline` run and
+   its three task groups.
