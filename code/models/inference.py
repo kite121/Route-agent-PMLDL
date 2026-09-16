@@ -40,6 +40,15 @@ class ToolScore:
 
 
 @dataclass(frozen=True)
+class ToolDefinition:
+    """A tool exposed by the immutable registry packaged with the model."""
+
+    name: str
+    description: str
+    arguments: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class RoutingResult:
     decision: Literal["route", "fallback"]
     tool: str | None
@@ -218,7 +227,7 @@ def _extract_package(
 def _load_tool_registry(
     tools_path: Path,
     expected_sha256: str,
-) -> tuple[list[str], str, list[str]]:
+) -> tuple[list[ToolDefinition], str, list[str]]:
     if _tool_descriptions_sha256(tools_path) != expected_sha256:
         raise ValueError("packaged tool descriptions differ from model manifest")
     try:
@@ -234,6 +243,7 @@ def _load_tool_registry(
     names = sorted(tools)
     if fallback in names:
         raise ValueError("fallback must not duplicate a tool name")
+    definitions: list[ToolDefinition] = []
     descriptions: list[str] = []
     for name in names:
         specification = tools[name]
@@ -242,8 +252,22 @@ def _load_tool_registry(
         description = specification.get("description")
         if not isinstance(description, str) or not description.strip():
             raise ValueError(f"packaged tool {name} has no description")
-        descriptions.append(f"passage: {description.strip()}")
-    return names, fallback, descriptions
+        arguments = specification.get("arguments")
+        if (
+            not isinstance(arguments, list)
+            or not all(isinstance(argument, str) and argument.strip() for argument in arguments)
+        ):
+            raise ValueError(f"packaged tool {name} has invalid arguments")
+        normalized_description = description.strip()
+        definitions.append(
+            ToolDefinition(
+                name=name,
+                description=normalized_description,
+                arguments=tuple(argument.strip() for argument in arguments),
+            )
+        )
+        descriptions.append(f"passage: {normalized_description}")
+    return definitions, fallback, descriptions
 
 
 def _select_device() -> str:
@@ -269,10 +293,11 @@ class Router:
 
         self.package = package
         self.device = device or _select_device()
-        self.tool_names, self.fallback_label, tool_texts = _load_tool_registry(
+        self.tool_definitions, self.fallback_label, tool_texts = _load_tool_registry(
             package.tools_path,
             package.tools_sha256,
         )
+        self.tool_names = [definition.name for definition in self.tool_definitions]
         self.model = SentenceTransformer(str(package.encoder_path), device=self.device)
         self.model.eval()
         self.tool_embeddings = self.model.encode(
@@ -293,11 +318,40 @@ class Router:
             "tool_count": len(self.tool_names),
         }
 
-    def route(self, text: str, *, top_k: int = 3) -> RoutingResult:
+    def list_tools(self) -> list[ToolDefinition]:
+        """Return the tool metadata packaged with the currently served model."""
+
+        return list(self.tool_definitions)
+
+    def route(
+        self,
+        text: str,
+        *,
+        top_k: int = 3,
+        allowed_tools: list[str] | None = None,
+    ) -> RoutingResult:
         if not isinstance(text, str) or not text.strip():
             raise ValueError("text must be a non-empty string")
         if isinstance(top_k, bool) or not isinstance(top_k, int) or top_k <= 0:
             raise ValueError("top_k must be a positive integer")
+        if allowed_tools is None:
+            eligible_indices = np.arange(len(self.tool_names))
+        else:
+            if not allowed_tools:
+                raise ValueError("allowed_tools must contain at least one tool")
+            unknown_tools = sorted(set(allowed_tools) - set(self.tool_names))
+            if unknown_tools:
+                raise ValueError(
+                    "allowed_tools contains unknown tools: " + ", ".join(unknown_tools)
+                )
+            allowed_tool_set = set(allowed_tools)
+            eligible_indices = np.array(
+                [
+                    index
+                    for index, name in enumerate(self.tool_names)
+                    if name in allowed_tool_set
+                ]
+            )
         query_embedding = self.model.encode(
             [f"query: {text.strip()}"],
             batch_size=1,
@@ -306,11 +360,12 @@ class Router:
             show_progress_bar=False,
             device=self.device,
         )[0]
-        scores = query_embedding @ self.tool_embeddings.T
-        count = min(top_k, len(self.tool_names))
-        indices = np.argsort(-scores)[:count]
+        all_scores = query_embedding @ self.tool_embeddings.T
+        scores = all_scores[eligible_indices]
+        count = min(top_k, len(eligible_indices))
+        indices = eligible_indices[np.argsort(-scores)[:count]]
         candidates = [
-            ToolScore(tool=self.tool_names[index], score=float(scores[index]))
+            ToolScore(tool=self.tool_names[index], score=float(all_scores[index]))
             for index in indices
         ]
         best = candidates[0]

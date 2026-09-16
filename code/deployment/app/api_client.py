@@ -40,6 +40,19 @@ class ModelInfo:
     tool_count: int
 
 
+@dataclass(frozen=True)
+class ToolDefinition:
+    name: str
+    description: str
+    arguments: list[str]
+
+
+@dataclass(frozen=True)
+class ToolRegistry:
+    model_version: str
+    tools: list[ToolDefinition]
+
+
 class ApiClient:
     """Small client that keeps the Streamlit app independent from model code."""
 
@@ -67,11 +80,40 @@ class ApiClient:
         except (KeyError, TypeError, ValueError) as error:
             raise ApiClientError("FastAPI returned an invalid model-info response") from error
 
-    def predict(self, text: str, top_k: int) -> Prediction:
+    def tools(self) -> ToolRegistry:
+        payload = self._request("GET", "/tools")
+        try:
+            tools = payload["tools"]
+            if not isinstance(tools, list) or not tools:
+                raise TypeError("tools must be a non-empty list")
+            return ToolRegistry(
+                model_version=str(payload["model_version"]),
+                tools=[
+                    ToolDefinition(
+                        name=str(item["name"]),
+                        description=str(item["description"]),
+                        arguments=[str(argument) for argument in item["arguments"]],
+                    )
+                    for item in tools
+                ],
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            raise ApiClientError("FastAPI returned an invalid tools response") from error
+
+    def predict(
+        self,
+        text: str,
+        top_k: int,
+        allowed_tools: list[str],
+    ) -> Prediction:
         payload = self._request(
             "POST",
             "/predict",
-            json_body={"text": text, "top_k": top_k},
+            json_body={
+                "text": text,
+                "top_k": top_k,
+                "allowed_tools": allowed_tools,
+            },
         )
         try:
             candidates = payload["top_k"]

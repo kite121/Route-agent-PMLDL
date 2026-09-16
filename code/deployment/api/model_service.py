@@ -13,6 +13,8 @@ from deployment.api.schemas import (
     PredictRequest,
     PredictResponse,
     ToolCandidate,
+    ToolDefinitionResponse,
+    ToolsResponse,
 )
 
 
@@ -45,7 +47,11 @@ class ModelService:
     def predict(self, request: PredictRequest) -> PredictResponse:
         """Route one API-validated user request."""
 
-        result = self._router.route(request.text, top_k=request.top_k)
+        result = self._router.route(
+            request.text,
+            top_k=request.top_k,
+            allowed_tools=request.allowed_tools,
+        )
         return PredictResponse(
             decision=result.decision,
             tool=result.tool,
@@ -55,6 +61,21 @@ class ModelService:
                 for item in result.top_k
             ],
             model_version=result.model_version,
+        )
+
+    def tools(self) -> ToolsResponse:
+        """Return the registry embedded in the currently served model package."""
+
+        return ToolsResponse(
+            model_version=self._router.package.model_version,
+            tools=[
+                ToolDefinitionResponse(
+                    name=definition.name,
+                    description=definition.description,
+                    arguments=list(definition.arguments),
+                )
+                for definition in self._router.list_tools()
+            ],
         )
 
     def health(self) -> HealthResponse:

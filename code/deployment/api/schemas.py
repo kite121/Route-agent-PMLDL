@@ -17,10 +17,11 @@ class ApiSchema(BaseModel):
 
 
 class PredictRequest(ApiSchema):
-    """A user request and the number of alternative tools to return."""
+    """A request, displayed-candidate count, and optional eligible tool subset."""
 
     text: str = Field(description="Non-empty user request")
     top_k: int = Field(default=3, ge=1, le=MAX_TOP_K)
+    allowed_tools: list[str] | None = Field(default=None, max_length=MAX_TOP_K)
 
     @field_validator("text")
     @classmethod
@@ -30,12 +31,41 @@ class PredictRequest(ApiSchema):
             raise ValueError("text must not be blank")
         return normalized
 
+    @field_validator("allowed_tools")
+    @classmethod
+    def normalize_allowed_tools(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        if not value:
+            raise ValueError("allowed_tools must contain at least one tool")
+        normalized = [tool.strip() for tool in value]
+        if any(not tool for tool in normalized):
+            raise ValueError("allowed_tools must not contain blank names")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("allowed_tools must not contain duplicates")
+        return normalized
+
 
 class ToolCandidate(ApiSchema):
     """One candidate tool ranked by cosine similarity."""
 
     tool: str = Field(min_length=1)
     score: float = Field(ge=-1.0, le=1.0)
+
+
+class ToolDefinitionResponse(ApiSchema):
+    """One tool stored in the registry of the currently served model."""
+
+    name: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+    arguments: list[str]
+
+
+class ToolsResponse(ApiSchema):
+    """The immutable tool registry associated with the served model version."""
+
+    model_version: str = Field(min_length=1)
+    tools: list[ToolDefinitionResponse] = Field(min_length=1)
 
 
 class PredictResponse(ApiSchema):

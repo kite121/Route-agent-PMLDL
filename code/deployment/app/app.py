@@ -6,7 +6,7 @@ import os
 
 import streamlit as st
 
-from api_client import ApiClient, ApiClientError, Prediction
+from api_client import ApiClient, ApiClientError, Prediction, ToolDefinition
 
 
 DEFAULT_API_BASE_URL = "http://127.0.0.1:8000"
@@ -43,6 +43,19 @@ def render_prediction(prediction: Prediction) -> None:
     )
 
 
+def tool_rows(tools: list[ToolDefinition]) -> list[dict[str, str]]:
+    """Format API-provided tool metadata for the visible registry table."""
+
+    return [
+        {
+            "tool": tool.name,
+            "description": tool.description,
+            "arguments": ", ".join(tool.arguments),
+        }
+        for tool in tools
+    ]
+
+
 def main() -> None:
     st.set_page_config(page_title="Route Agent", page_icon="🧭", layout="centered")
     st.title("Route Agent")
@@ -52,19 +65,49 @@ def main() -> None:
     st.caption(f"FastAPI endpoint: `{api_base_url}`")
     client = get_api_client(api_base_url)
 
+    try:
+        registry = client.tools()
+    except ApiClientError as error:
+        st.error(f"Cannot load the tool registry from FastAPI: {error}")
+        return
+
+    tool_names = [tool.name for tool in registry.tools]
+    st.subheader("Available tools")
+    st.caption(f"Registry packaged with model `{registry.model_version}`")
+    st.dataframe(tool_rows(registry.tools), hide_index=True, width="stretch")
+    allowed_tools = st.multiselect(
+        "Tools available for this request",
+        options=tool_names,
+        default=tool_names,
+        help="The model routes only among selected tools. Clear the selection to block routing.",
+    )
+
     text = st.text_area(
         "User request",
         placeholder="For example: Set an alarm for 7 tomorrow morning",
     )
-    top_k = st.slider("Number of alternative tools", min_value=1, max_value=MAX_TOP_K, value=3)
+    if allowed_tools:
+        top_k = st.slider(
+            "Number of displayed candidates",
+            min_value=1,
+            max_value=min(MAX_TOP_K, len(allowed_tools)),
+            value=min(3, len(allowed_tools)),
+        )
+    else:
+        st.warning("Select at least one tool before routing a request.")
+        top_k = 1
 
-    if st.button("Route request", type="primary"):
+    if st.button("Route request", type="primary", disabled=not allowed_tools):
         if not text.strip():
             st.warning("Enter a request before routing it.")
             return
         try:
             with st.spinner("Requesting prediction from FastAPI..."):
-                prediction = client.predict(text=text, top_k=top_k)
+                prediction = client.predict(
+                    text=text,
+                    top_k=top_k,
+                    allowed_tools=allowed_tools,
+                )
         except ApiClientError as error:
             st.error(f"FastAPI request failed: {error}")
             return

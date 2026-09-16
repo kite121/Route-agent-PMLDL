@@ -15,6 +15,7 @@ from deployment.api.schemas import (
     ModelInfoResponse,
     PredictRequest,
     PredictResponse,
+    ToolsResponse,
 )
 
 
@@ -78,6 +79,17 @@ def model_info(request: Request) -> ModelInfoResponse:
     return _model_service(request).model_info()
 
 
+@app.get(
+    "/tools",
+    response_model=ToolsResponse,
+    responses=MODEL_UNAVAILABLE_RESPONSES,
+)
+def tools(request: Request) -> ToolsResponse:
+    """Return tools from the registry packaged with the model being served."""
+
+    return _model_service(request).tools()
+
+
 @app.post(
     "/predict",
     response_model=PredictResponse,
@@ -86,4 +98,10 @@ def model_info(request: Request) -> ModelInfoResponse:
 def predict(request: Request, payload: PredictRequest) -> PredictResponse:
     """Route one validated user request through the packaged model."""
 
-    return _model_service(request).predict(payload)
+    try:
+        return _model_service(request).predict(payload)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(error),
+        ) from error

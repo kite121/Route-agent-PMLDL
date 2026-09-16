@@ -107,6 +107,38 @@ def _check_prediction(
         raise RuntimeError("Prediction has no top_k candidates")
 
 
+def _check_tool_registry(api_url: str, expected_version: str) -> None:
+    registry = _request_json(api_url, "/tools")
+    if registry.get("model_version") != expected_version:
+        raise RuntimeError("Tools response has an unexpected model version")
+    tools = registry.get("tools")
+    if not isinstance(tools, list) or not tools:
+        raise RuntimeError("Tools response has no registered tools")
+    alarm = next((tool for tool in tools if tool.get("name") == "alarm_set"), None)
+    if not isinstance(alarm, dict) or not isinstance(alarm.get("description"), str):
+        raise RuntimeError("Tools response has an invalid alarm_set definition")
+
+
+def _check_allowed_tool_filter(api_url: str) -> None:
+    prediction = _request_json(
+        api_url,
+        "/predict",
+        method="POST",
+        payload={
+            "text": "Set an alarm for seven tomorrow morning",
+            "top_k": 3,
+            "allowed_tools": ["weather_query"],
+        },
+    )
+    candidates = prediction.get("top_k")
+    if not isinstance(candidates, list) or [item.get("tool") for item in candidates] != [
+        "weather_query"
+    ]:
+        raise RuntimeError("Prediction did not restrict candidates to allowed_tools")
+    if prediction.get("tool") not in {None, "weather_query"}:
+        raise RuntimeError("Prediction selected a tool outside allowed_tools")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Smoke-check the Docker-deployed router API")
     parser.add_argument("--api-url", default=DEFAULT_API_URL)
@@ -126,6 +158,7 @@ def main() -> None:
     info = _request_json(arguments.api_url, "/model-info")
     if info.get("model_version") != expected_version:
         raise RuntimeError("Model-info response has an unexpected model version")
+    _check_tool_registry(arguments.api_url, expected_version)
     _check_prediction(
         arguments.api_url,
         text="Set an alarm for seven tomorrow morning",
@@ -140,6 +173,7 @@ def main() -> None:
         expected_tool=None,
         expected_version=expected_version,
     )
+    _check_allowed_tool_filter(arguments.api_url)
     print(f"Smoke check passed for model {expected_version} at {arguments.api_url}")
 
 
